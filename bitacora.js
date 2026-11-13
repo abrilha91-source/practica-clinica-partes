@@ -1,6 +1,9 @@
 /* Lector de bitácoras de inasistencias y asignación de práctica (v1.2).
    Reglas para elegir la práctica de cada novedad:
    (a) materia o sede escrita en la bitácora (encabezado o renglón);
+      cada práctica tiene rotación en más de un hospital: se registra en la
+      rotación del hospital que indica la bitácora, aunque la lista oficial
+      del cadete tenga la otra sede;
    (b) instructora o docente a cargo, cruzada con las prácticas del cadete;
    (c) si sigue habiendo más de una o ninguna, queda «Por asignar» y decide la usuaria.
    La fecha solo desempata entre candidatas de (a) o (b); nunca elige sola. */
@@ -32,7 +35,7 @@
   }
   const SEDES = [
     ["HCM", /hospital central militar|\bh\.?\s*c\.?\s*m\b|\bcentral militar\b/],
-    ["HMEMYN", /mujer|neonat|\bh\.?\s*m\.?\s*e\.?\s*m|\bhmem/],
+    ["HMEMYN", /hospital(?:\s+de\s+la)?\s+mujer|mujer\s*y\s*neonat|neonatolog|\bh\.?\s*m\.?\s*e\.?\s*m|\bhmem/],
     ["UEM", /unidad de especialidades|\bu\.?\s*e\.?\s*m\b/],
     ["LCA", /cardiel/],
     ["MEX", /mexico\s*-?\s*espana/],
@@ -477,6 +480,23 @@
     if (!cad || !cad.asig) return [];
     return [...new Set(Object.values(cad.asig).map(a => a && a.p).filter(id => id && P.has(id)))];
   }
+  function yearOk(p, cad) {
+    return !cad || !p || p.anio == null || p.anio === "" || cad.a == null || cad.a === "" || String(p.anio) === String(cad.a);
+  }
+  /* mismas materias del cadete en todas sus sedes (HCM y HMEMYN, u otra), no solo la de la lista oficial */
+  function rotacionesDelCadete(cad, P, PL) {
+    const own = practicasDelCadete(cad, P);
+    if (!PL || !PL.length) return own;
+    const mks = new Set(own.map(id => (P.get(id) || {}).mk).filter(Boolean));
+    return [...new Set(own.concat(PL.filter(p => mks.has(p.mk) && yearOk(p, cad)).map(p => p.id)))];
+  }
+  function sedeDe(ev) {
+    const k = sedeKey(ev.sede || "") || sedeKey(ev.servicio || "") || sedeKey(ev.materia || "");
+    return k === "NAVAL" ? "HCM" : k;
+  }
+  function turnoDe(ev) {
+    return String(ev.turno || "") || turnoOf([ev.servicio, ev.sede, ev.grupo].filter(Boolean).join(" "));
+  }
   /* ev: {cid, fecha, materia, sede, instructora, turno, servicio}; ctx: {practicas:[...], cadetes:[...]}
      devuelve {practica, regla, candidatos, aviso} */
   function asignar(ev, ctx) {
@@ -492,14 +512,19 @@
     let mks = mksOf(ev.materia || "");
     if (!mks.length && ev.servicio) { const ms = mksOf(ev.servicio).filter(k => k === "psiq" || k === "sp"); if (ms.length === 1) mks = ms; }
     if (mks.includes("tsu")) mks = ["tsu"];
-    const sk = sedeKey(ev.sede || "") === "NAVAL" ? "HCM" : sedeKey(ev.sede || "");
+    const sk = sedeDe(ev);
+    const tu = turnoDe(ev);
     if (mks.length || sk) {
       const fit = id => { const p = P.get(id); return p && (!mks.length || mks.includes(p.mk)) && (!sk || sedeKey(p.sede) === sk); };
       let A = base.filter(fit);
+      /* si la lista oficial tiene la otra sede, se elige la rotación del hospital que indica la bitácora */
+      if (!A.length && sk) {
+        const rot = PL.filter(p => fit(p.id) && yearOk(p, cad) && (mks.length ? true : delCad.some(id => (P.get(id) || {}).mk === p.mk))).map(p => p.id);
+        if (rot.length) A = rot;
+      }
       if (!A.length && sk && mks.length) {
         const mismaMat = base.filter(id => mks.includes((P.get(id) || {}).mk));
-        const escritas = PL.filter(p => fit(p.id)).map(p => p.id);
-        if (mismaMat.length) return { practica: "", regla: "por decidir", candidatos: [...new Set([...escritas, ...mismaMat])], aviso: "La sede escrita en la bitácora no coincide con la práctica del cadete." };
+        if (mismaMat.length) return { practica: "", regla: "por decidir", candidatos: mismaMat, aviso: "La sede escrita en la bitácora no tiene una rotación registrada de esta práctica." };
       }
       if (!A.length && mks.length && delCad.length) {
         const otras = PL.filter(p => fit(p.id)).map(p => p.id);
@@ -517,10 +542,18 @@
         else if (!cand) { aviso = aviso || "La instructora escrita no coincide con las prácticas del cadete."; conflicto = true; }
       }
     }
-    /* turno escrito: solo afina */
-    if (cand && cand.length > 1 && ev.turno) {
-      const T = cand.filter(id => String((P.get(id) || {}).turno || "") === ev.turno);
+    /* turno escrito: solo afina; si no viene, se prefiere el mismo turno de la rotación del cadete */
+    if (cand && cand.length > 1 && tu) {
+      const T = cand.filter(id => String((P.get(id) || {}).turno || "") === tu);
       if (T.length) cand = T;
+    } else if (cand && cand.length > 1 && cad && !tu) {
+      const mkSet = new Set(cand.map(id => (P.get(id) || {}).mk));
+      const propios = delCad.filter(id => mkSet.has((P.get(id) || {}).mk));
+      const turnos = [...new Set(propios.map(id => String((P.get(id) || {}).turno || "")).filter(Boolean))];
+      if (turnos.length === 1) {
+        const T = cand.filter(id => String((P.get(id) || {}).turno || "") === turnos[0]);
+        if (T.length) cand = T;
+      }
     }
     if (cand && cand.length === 1) {
       const p = P.get(cand[0]);
@@ -553,17 +586,24 @@
     for (const e of eventos) {
       const cad = cadById.get(e.c);
       const delCad = practicasDelCadete(cad, P);
+      const permitidas = rotacionesDelCadete(cad, P, PL);
       const p = P.get(e.p);
       const fuera = p && e.f && p.ini && p.fin && !enPeriodo(p, e.f);
-      const ajena = e.p && delCad.length && !delCad.includes(e.p);
+      const ajena = e.p && delCad.length && !permitidas.includes(e.p);
       const sin = !e.p || !p;
-      if (!fuera && !ajena && !sin) continue;
       const x = String(e.x || "");
-      const r = asignar({ cid: e.c, fecha: e.f, materia: mksOf(x).length ? x : "", sede: sedeKey(x) ? x : "", instructora: "", servicio: x, turno: "" }, { practicas: PL, cadById });
-      const porTexto = r.practica && /escrita/.test(r.regla) && r.practica !== e.p;
-      const motivo = sin ? "sin práctica" : ajena ? "la práctica no es del cadete" : "la fecha cae fuera del periodo de la práctica";
-      const enCurso = delCad.filter(id => id !== e.p && enPeriodo(P.get(id), e.f));
-      const row = { id: e.id, c: e.c, f: e.f, t: e.t, actual: e.p || "", motivo, candidatos: delCad.length ? delCad : PL.map(x => x.id), sugerida: enCurso.length === 1 ? enCurso[0] : "" };
+      const skX = sedeKey(x) === "NAVAL" ? "HCM" : sedeKey(x);
+      /* solo si existe rotación de la misma materia en ese hospital (un servicio que nombra otro nosocomio no basta) */
+      const hayRot = !!(skX && p && PL.some(q => q.mk === p.mk && (sedeKey(q.sede) === "NAVAL" ? "HCM" : sedeKey(q.sede)) === skX));
+      const sedeDistinta = !!(skX && p && sedeKey(p.sede) && skX !== sedeKey(p.sede) && hayRot);
+      if (!fuera && !ajena && !sin && !sedeDistinta) continue;
+      const r = asignar({ cid: e.c, fecha: e.f, materia: mksOf(x).length ? x : (p && p.materia) || "", sede: skX ? x : "", instructora: "", servicio: x, turno: turnoOf(x) }, { practicas: PL, cadById });
+      const porTexto = r.practica && r.practica !== e.p && (/escrita/.test(r.regla) || sedeDistinta);
+      const motivo = sin ? "sin práctica" : ajena ? "la práctica no es del cadete" : sedeDistinta ? "la bitácora indica otro hospital (otra rotación de la misma práctica)" : "la fecha cae fuera del periodo de la práctica";
+      const enCursoPropias = delCad.filter(id => id !== e.p && enPeriodo(P.get(id), e.f));
+      const enCurso = permitidas.filter(id => id !== e.p && enPeriodo(P.get(id), e.f));
+      const sugerida = (r.practica && r.practica !== e.p) ? r.practica : enCursoPropias.length === 1 ? enCursoPropias[0] : enCurso.length === 1 ? enCurso[0] : "";
+      const row = { id: e.id, c: e.c, f: e.f, t: e.t, actual: e.p || "", motivo, candidatos: permitidas.length ? permitidas : PL.map(x => x.id), sugerida };
       if (porTexto) reasignar.push(Object.assign(row, { nueva: r.practica, regla: r.regla }));
       else decidir.push(row);
     }

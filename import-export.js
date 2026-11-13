@@ -667,7 +667,7 @@
 </section>
 <section class="box">
   <h3>Acerca de esta réplica</h3>
-  <p class="hint">Versión 1.2 · App independiente de «Seguimiento de práctica clínica» (seguimiento-discentes). Esta réplica no envía datos a Claude ni a ningún servidor. Lee PDF, Excel, Word, PowerPoint, fotos (OCR) y, si el dispositivo lo permite, audio; conviene revisar lo leído antes de aplicar. Cada novedad se registra en la práctica que dice la bitácora (materia o sede escrita); si no lo dice, por la instructora; si aun así hay duda, queda «Por asignar» y tú eliges.</p>
+  <p class="hint">Versión 1.2 · App independiente de «Seguimiento de práctica clínica» (seguimiento-discentes). Esta réplica no envía datos a Claude ni a ningún servidor. Lee PDF, Excel, Word, PowerPoint, fotos (OCR) y, si el dispositivo lo permite, audio; conviene revisar lo leído antes de aplicar. Cada novedad se registra en la práctica que dice la bitácora (materia o sede escrita; si hay dos rotaciones, en el hospital que indica la bitácora); si no lo dice, por la instructora; si aun así hay duda, queda «Por asignar» y tú eliges.</p>
 </section>
 <section class="box" id="perBox">
   <h3>Fechas de las prácticas</h3>

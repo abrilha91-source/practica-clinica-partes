@@ -456,7 +456,7 @@ async function leer(){const canImg=!!(SAMPLE_LIM&&SAMPLE_LIM.images);IMP.st="ley
     if((IMP.notes||[]).length)res.notas=((res.notas?res.notas+" ":"")+IMP.notes.join(" ")).trim();IMP.res=res;IMP.st="rev"}
   catch(e){console.error(e);IMP.st="form";toast(e&&e.code==="not_granted"?"No se pudo usar el lector de archivos en esta página.":e&&e.code==="images_unavailable"?"No se pudo leer la imagen o el PDF escaneado. Prueba con una foto más nítida o pega el texto.":e&&e.code==="empty"?"El archivo no tiene texto legible.":e&&/docx/.test(e.message||"")?"El Word no se pudo abrir; guárdalo como .docx e inténtalo otra vez.":e&&e.code==="rate_limited"?"El lector está ocupado; inténtalo en un minuto.":"No se pudo leer la bitácora. Revisa el archivo o pega el texto.")}
   render()}
-/* Práctica de cada novedad leída: (a) materia o sede escrita, (b) instructora, (c) por decidir. La fecha solo desempata. */
+/* Práctica de cada novedad leída: (a) materia o sede escrita (rotación en el hospital de la bitácora), (b) instructora, (c) por decidir. La fecha solo desempata. */
 function asignarEv(x){const ctxA={practicas:pracs(),cadById:S.cad};
   const a=window.ReplicaBit?ReplicaBit.asignar({...x,fecha:isoOk(x.fecha)?x.fecha:""},ctxA):{practica:x.practica&&S.prac.has(x.practica)?x.practica:"",regla:x.practica?"indicada en el texto":"por decidir",candidatos:[],aviso:""};
   return {...x,practica:a.practica,regla:a.regla,candidatos:a.candidatos||[],aviso:a.aviso||"",ok:!!(x.cid&&a.practica)}}

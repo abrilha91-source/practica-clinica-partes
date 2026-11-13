@@ -41,7 +41,7 @@ El lector reconoce el formato de la bitácora semanal (Materia, Sede / campo cl�
 
 Cada novedad se registra en la práctica que corresponde, en este orden:
 
-1. **Materia o sede escrita** en la bitácora (encabezado o renglón).
+1. **Materia o sede escrita** en la bitácora (encabezado o renglón). Si la práctica tiene rotación en más de un hospital, se registra en la rotación del hospital que indica la bitácora, aunque la lista oficial del cadete tenga la otra sede.
 2. **Instructora o docente a cargo**, cruzada con las prácticas del cadete.
 3. Si aún hay más de una práctica posible, o ninguna, queda en **Pendientes por asignar** y la usuaria la elige antes de guardar.
 
