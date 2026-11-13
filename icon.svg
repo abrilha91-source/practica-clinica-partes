@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Seguimiento de práctica clínica">
+  <rect width="512" height="512" rx="96" fill="#050607"/>
+  <rect x="36" y="36" width="440" height="440" rx="72" fill="#0E1113" stroke="#232A31" stroke-width="8"/>
+  <polyline points="56,280 140,280 176,160 232,360 280,240 320,280 456,280" fill="none" stroke="#39FF88" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="176" cy="160" r="16" fill="#FF2BD6"/>
+</svg>

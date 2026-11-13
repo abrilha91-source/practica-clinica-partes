@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#050607">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Seguimiento de práctica clínica (réplica)</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="stylesheet" href="vendor/fonts.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+
+<div class="wrap">
+  <header class="top">
+    <div class="monitor"><canvas id="ecg" aria-hidden="true"></canvas>
+      <div class="ttl"><div><p class="inst"><span class="live" aria-hidden="true"></span>Esc. Mil. Enfría. · Subsección de Práctica Clínica · Réplica local</p>
+        <h1>Seguimiento de <em>práctica clínica</em> <span class='yr y2' style='vertical-align:middle;font-size:12px'>réplica v1.0</span></h1><p class="clock" id="clock"></p></div>
+        <div class="readout" id="readout"><small>Asistencia · último parte</small><b>—</b></div></div></div>
+    <nav class="tabs" role="tablist" aria-label="Secciones">
+      <button role="tab" data-v="pan" aria-selected="true">Panorama</button>
+      <button role="tab" data-v="par" aria-selected="false">Parte del día</button>
+      <button role="tab" data-v="cad" aria-selected="false">Cadetes</button>
+      <button role="tab" data-v="nov" aria-selected="false">Novedades</button>
+      <button role="tab" data-v="cal" aria-selected="false">Calificaciones</button>
+      <button role="tab" data-v="bit" aria-selected="false">Bitácoras</button>
+      <button role="tab" data-v="cfg" aria-selected="false">Ajustes</button>
+    </nav>
+  </header>
+  <p class="notice" id="notice" hidden></p>
+  <main id="view"><div class="empty"><strong>Cargando cadetes y prácticas…</strong>En unos segundos aparecerán los grupos, los partes y las novedades. Si es la primera vez, la app se abre vacía: importa el concentrado o un respaldo JSON en Ajustes.</div></main>
+</div>
+
+<dialog id="dFicha"><div class="dlg" id="fichaBody"></div></dialog>
+<dialog id="dLista"><div class="dlg" id="listaBody"></div></dialog>
+<div class="toast" id="toast" role="status"></div>
+
+
+<script src="shim.js"></script>
+<script src="app.js"></script>
+<script src="import-export.js"></script>
+<script src="boot.js"></script>
+</body>
+</html>
