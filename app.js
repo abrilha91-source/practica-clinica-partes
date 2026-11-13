@@ -106,8 +106,8 @@ const RED=matchMedia("(prefers-reduced-motion: reduce)").matches;
 function render(){
   document.querySelectorAll("nav.tabs button").forEach(b=>b.setAttribute("aria-selected",b.dataset.v===S.view));
   if(S.loaded<2){return}
-  if(!S.prac.size&&S.view!=="cfg"){VW.innerHTML=`<div class="empty"><strong>Todavía no hay prácticas cargadas</strong>Esta réplica se publica vacía: los registros se quedan en este dispositivo. En Ajustes puedes importar el concentrado en Excel o un respaldo JSON.<p style="margin:14px 0 0"><button class="btn" type="button" id="goCfg">Ir a Ajustes para importar</button></p></div>`;const g=$("#goCfg");if(g)g.onclick=()=>{S.view="cfg";render()};return}
-  ({pan:vPan,par:vPar,cad:vCad,nov:vNov,cal:vCal,bit:vBit,cfg:vCfg})[S.view]();
+  if(!S.prac.size&&S.view!=="cfg"&&S.view!=="est"&&S.view!=="bit"){VW.innerHTML=`<div class="empty"><strong>Todavía no hay prácticas cargadas</strong>Esta réplica se publica vacía: los registros se quedan en este dispositivo. En Ajustes puedes importar el concentrado en Excel o un respaldo JSON.<p style="margin:14px 0 0"><button class="btn" type="button" id="goCfg">Ir a Ajustes para importar</button></p></div>`;const g=$("#goCfg");if(g)g.onclick=()=>{S.view="cfg";render()};return}
+  ({pan:vPan,par:vPar,cad:vCad,nov:vNov,cal:vCal,est:vEst,bit:vBit,cfg:vCfg})[S.view]();
   readout();
   if(lastView!==S.view){lastView=S.view;if(!RED){VW.classList.remove("enter");void VW.offsetWidth;VW.classList.add("enter");clearTimeout(enT);enT=setTimeout(()=>VW.classList.remove("enter"),900);countUp(VW)}}}
 function countUp(root){root.querySelectorAll(".tally b").forEach(b=>{const t=b.textContent.trim();const m=t.match(/^(\d+)(.*)$/);if(!m||+m[1]<2)return;const n=+m[1],suf=m[2],t0=performance.now();
@@ -366,9 +366,9 @@ function matchCad(nombre,pool){const q=tokens(nombre);if(q.length<2)return null;
   return best&&!tie&&bs>=0.6?best.id:null}
 
 /* lectura de archivos adjuntos */
-const OKF=/\.(pdf|xlsx|xls|csv|docx)$/i;
-const okFile=f=>/^image\//.test(f.type)||OKF.test(f.name);
-const kindOf=f=>/^image\//.test(f.type)?"img":/\.pdf$/i.test(f.name)?"pdf":/\.(xlsx|xls|csv)$/i.test(f.name)?"xls":"doc";
+const OKF=/\.(pdf|xlsx|xls|csv|docx|pptx|ppt|jpe?g|png|gif|webp|mp3|wav|m4a|ogg)$/i;
+const okFile=f=>/^image\//.test(f.type)||/^audio\//.test(f.type)||OKF.test(f.name);
+const kindOf=f=>window.ReplicaReaders?ReplicaReaders.kindOf(f):(/^image\//.test(f.type)?"img":/\.pdf$/i.test(f.name)?"pdf":/\.(xlsx|xls|csv)$/i.test(f.name)?"xls":/\.(pptx|ppt)$/i.test(f.name)?"ppt":/^audio\//.test(f.type)||/\.(mp3|wav)$/i.test(f.name)?"aud":"doc");
 function loadScript(src){return new Promise((res,rej)=>{const s=document.createElement("script");s.src=src;s.onload=res;s.onerror=()=>rej(new Error("No se pudo cargar "+src));document.head.appendChild(s)})}
 async function loadJSZip(){if(!window.JSZip)await loadScript("vendor/jszip.min.js");return window.JSZip}
 async function loadPDF(){if(!window.pdfjsLib){await loadScript("vendor/pdf.min.js");await loadScript("vendor/pdf.worker.min.js");
@@ -383,17 +383,21 @@ async function pdfRead(f,maxImgs){const L=await loadPDF();const pdf=await L.getD
       const c=document.createElement("canvas");c.width=Math.round(v.width);c.height=Math.round(v.height);await pg.render({canvasContext:c.getContext("2d"),viewport:v}).promise;
       imgs.push(await new Promise(r=>c.toBlob(b=>r(b),"image/jpeg",0.85)))}}
   return {txt,imgs,pages:pdf.numPages}}
-async function prepararArchivos(canImg){const max=canImg?SAMPLE_LIM.images.maxCount:0;let imgs=[],texto="",omit=0;
+async function prepararArchivos(canImg){
+  const onProgress=(msg,pct)=>{IMP.msg=msg;IMP.pct=pct;const b=$("#impBox");if(b&&IMP.st==="leyendo"){const p=b.querySelector("#impMsgL");const i=b.querySelector("#impBar i");if(p)p.innerHTML="<b>"+esc(msg)+"</b>";if(i)i.style.width=(pct||0)+"%"}};
+  if(window.ReplicaReaders&&ReplicaReaders.preparar)return ReplicaReaders.preparar(IMP.files,{onProgress});
+  const max=canImg&&SAMPLE_LIM&&SAMPLE_LIM.images?SAMPLE_LIM.images.maxCount:0;let imgs=[],texto="",omit=0;
   for(const f of IMP.files){const k=kindOf(f);
     if(k==="img"){if(imgs.length<max)imgs.push(await shrink(f));else omit++}
     else if(k==="pdf"){const r=await pdfRead(f,max-imgs.length);if(r.txt)texto+=`\n## Archivo PDF: ${f.name}\n${r.txt}`;imgs=imgs.concat(r.imgs);if(!r.txt&&!r.imgs.length)omit++}
     else if(k==="xls")texto+=`\n## Archivo Excel: ${f.name}\n${await xlsText(f)}`;
+    else if(k==="ppt"&&window.ReplicaReaders)texto+=`\n## Archivo PowerPoint: ${f.name}\n${await ReplicaReaders.pptText(f)}`;
     else texto+=`\n## Archivo Word: ${f.name}\n${await docText(f)}`}
-  return {imgs,texto,omit}}
+  return {imgs,texto,omit,notes:[]}}
 function vBit(){const f=IMP.f||(IMP.f=monday(today()));const B=[...S.bit.entries()].map(([id,b])=>({id,...b})).sort((a,b)=>(b.f+b.at).localeCompare(a.f+a.at));
   const canImg=!!(SAMPLE&&SAMPLE_LIM&&SAMPLE_LIM.images);
   VW.innerHTML=`<h2>Bitácoras</h2>
-  <p class="lead">Carga la bitácora semanal: fotos, PDF, Excel o Word, o pega el texto. Elige la semana que cubre. ${SAMPLE?"La réplica lee el texto de PDF, Excel, Word o lo que pegues, te muestra cada novedad o calificación antes de guardarla y nada cambia hasta que oprimas <b>Aplicar</b>. Las fotos no se pueden leer con reconocimiento óptico: se guardan en el archivo y, si hace falta, pegas el texto.":"En esta vista no hay lectura automática; la foto se guarda en el archivo y capturas los datos en Parte del día."}</p>
+  <p class="lead">Carga la bitácora o cualquier archivo de información: PDF, Excel, Word, PowerPoint, fotos (JPG, PNG), audio (MP3, WAV) o pega el texto. Elige la semana que cubre. ${SAMPLE?"La réplica lee el texto en este dispositivo (también de fotos y de PDF escaneados, con reconocimiento óptico; el audio se intenta transcribir). Te muestra cada novedad o calificación antes de guardarla y nada cambia hasta que oprimas <b>Aplicar</b>. El reconocimiento no es perfecto: conviene revisar, sobre todo con fotos borrosas o audios ruidosos.":"En esta vista no hay lectura automática; la foto se guarda en el archivo y capturas los datos en Parte del día."}</p>
   <div id="impBox" class="box"></div>
   <h2>Archivo de bitácoras</h2>
   ${B.length?`<div class="tl">${B.map(b=>`<div class="it" style="grid-template-columns:92px 1fr"><span class="fx">${fCorta(b.f)}</span><span><b>${b.tipo==="cal"?"Calificaciones · "+esc(MK[b.mk]||""):"Novedades del día"}</b>${b.resumen?`<span class="sub">${esc(b.resumen)}</span>`:""}
@@ -401,22 +405,22 @@ function vBit(){const f=IMP.f||(IMP.f=monday(today()));const B=[...S.bit.entries
     ${b.texto?`<details><summary class="hint">Texto</summary><pre style="white-space:pre-wrap;font-size:13px;margin:4px 0">${esc(b.texto)}</pre></details>`:""}</span></div>`).join("")}</div>`:`<p class="hint">Aquí quedará cada bitácora que cargues, con su foto, para consultarla después.</p>`}`;
   drawImp(canImg)}
 function drawImp(canImg){const box=$("#impBox");if(!box)return;
-  if(IMP.st==="leyendo"){box.innerHTML=`<p><b>${esc(IMP.msg)}</b></p><p class="hint">No cierres esta página.</p>`;return}
+  if(IMP.st==="leyendo"){box.innerHTML=`<p id="impMsgL"><b>${esc(IMP.msg)}</b></p><div class="ebar" id="impBar" style="max-width:100%;height:8px;margin:10px 0"><i style="width:${IMP.pct||0}%"></i></div><p class="hint">No cierres esta página. La lectura se hace en este dispositivo.</p>`;return}
   if(IMP.st==="rev")return drawRev(box);
   const mks=[...new Set(pracs().filter(p=>!p.efectivo).map(p=>p.mk))];
   box.innerHTML=`<div class="bar" style="margin-bottom:10px"><div class="seg" role="group" aria-label="Contenido"><button data-tp="nov" aria-pressed="${IMP.tipo==="nov"}">Novedades del día</button><button data-tp="cal" aria-pressed="${IMP.tipo==="cal"}">Calificaciones</button></div>
    <label class="hint" for="bf">Semana del</label><input type="date" id="bf" value="${IMP.f}"><span class="hint">${fCorta(IMP.f)} al ${fCorta(addD(IMP.f,6))}</span>
    ${IMP.tipo==="cal"?`<select id="bm" aria-label="Materia">${mks.map(mk=>`<option value="${mk}" ${IMP.mk===mk?"selected":""}>${MK[mk]}</option>`).join("")}</select>`:""}</div>
-  <label class="drop" id="drop"><input type="file" id="bfile" multiple accept="image/*,.pdf,.xlsx,.xls,.csv,.docx"><b>${IMP.files.length?`${IMP.files.length} archivo${IMP.files.length>1?"s":""} listo${IMP.files.length>1?"s":""}`:"Toca para elegir archivos o arrástralos aquí"}</b><span class="hint">Fotos (JPG, PNG), PDF, Excel (.xlsx, .xls, .csv) o Word (.docx).${canImg?` Hasta ${SAMPLE_LIM.images.maxCount} fotos o páginas escaneadas por lectura.`:SAMPLE?" En esta réplica se lee el texto de PDF, Excel y Word; las fotos se guardan en el archivo y no se transcriben solas.":""}</span></label>
+  <label class="drop" id="drop"><input type="file" id="bfile" multiple accept="image/jpeg,image/png,image/jpg,.jpg,.jpeg,.png,.pdf,.xlsx,.xls,.csv,.docx,.pptx,.ppt,.mp3,.wav,audio/mpeg,audio/wav,audio/*"><b>${IMP.files.length?`${IMP.files.length} archivo${IMP.files.length>1?"s":""} listo${IMP.files.length>1?"s":""}`:"Toca para elegir archivos o arrástralos aquí"}</b><span class="hint">PDF, Excel, Word, PowerPoint, JPG, PNG, MP3 o WAV.${canImg?` Hasta ${SAMPLE_LIM.images.maxCount} fotos o páginas escaneadas por lectura.`:SAMPLE?" Se lee el texto de PDF, Excel, Word, PowerPoint y, con reconocimiento óptico, de fotos y PDF escaneados. El audio se intenta transcribir; si no es posible, se guarda adjunto.":""}</span></label>
   ${IMP.files.length?`<div class="thumbs" style="margin-top:8px" id="th"></div>`:""}
   <label style="display:flex;flex-direction:column;gap:4px;margin-top:10px" class="hint">O pega aquí el texto (mensaje de WhatsApp, nota)<textarea id="btx" class="msg" style="min-height:120px" placeholder="Buenos días mi mayor sale la práctica clínica de primer turno…">${esc(IMP.texto)}</textarea></label>
   <div class="acts" style="margin-top:10px">${IMP.files.length||IMP.texto?`<button class="btn ghost" id="bclr">Limpiar</button>`:""}${SAMPLE?`<button class="btn" id="bread" ${IMP.files.length||IMP.texto.trim()?"":"disabled"}>Leer archivos</button>`:`<button class="btn" id="bsave" ${IMP.files.length||IMP.texto.trim()?"":"disabled"}>Guardar en el archivo</button>`}</div>`;
   box.querySelectorAll("[data-tp]").forEach(b=>b.onclick=()=>{IMP.tipo=b.dataset.tp;drawImp(canImg)});
   $("#bf").onchange=e=>{IMP.f=monday(e.target.value||today());drawImp(canImg)};const bm=$("#bm");if(bm){if(!IMP.mk)IMP.mk=bm.value;bm.onchange=e=>IMP.mk=e.target.value}
-  const fi=$("#bfile"),dr=$("#drop");fi.onchange=()=>{const all=[...fi.files];IMP.files=[...IMP.files,...all.filter(okFile)];if(all.some(f=>!okFile(f)))toast("Solo se aceptan fotos, PDF, Excel o Word (.docx).");drawImp(canImg)};
+  const fi=$("#bfile"),dr=$("#drop");fi.onchange=()=>{const all=[...fi.files];IMP.files=[...IMP.files,...all.filter(okFile)];if(all.some(f=>!okFile(f)))toast("Solo se aceptan PDF, Excel, Word, PowerPoint, JPG, PNG, MP3 o WAV.");drawImp(canImg)};
   dr.ondragover=e=>{e.preventDefault();dr.classList.add("over")};dr.ondragleave=()=>dr.classList.remove("over");
-  dr.ondrop=e=>{e.preventDefault();dr.classList.remove("over");const all=[...e.dataTransfer.files];IMP.files=[...IMP.files,...all.filter(okFile)];if(all.some(f=>!okFile(f)))toast("Solo se aceptan fotos, PDF, Excel o Word (.docx).");drawImp(canImg)};
-  const th=$("#th");if(th)IMP.files.forEach(f=>{if(kindOf(f)==="img"){const im=document.createElement("img");im.alt=f.name;im.src=URL.createObjectURL(f);th.appendChild(im)}else{const sp=document.createElement("span");sp.className="fchip";sp.textContent=({pdf:"PDF",xls:"Excel",doc:"Word"})[kindOf(f)]+" · "+f.name;th.appendChild(sp)}});
+  dr.ondrop=e=>{e.preventDefault();dr.classList.remove("over");const all=[...e.dataTransfer.files];IMP.files=[...IMP.files,...all.filter(okFile)];if(all.some(f=>!okFile(f)))toast("Solo se aceptan PDF, Excel, Word, PowerPoint, JPG, PNG, MP3 o WAV.");drawImp(canImg)};
+  const th=$("#th");if(th)IMP.files.forEach(f=>{if(kindOf(f)==="img"){const im=document.createElement("img");im.alt=f.name;im.src=URL.createObjectURL(f);th.appendChild(im)}else{const sp=document.createElement("span");sp.className="fchip";sp.textContent=(window.ReplicaReaders&&ReplicaReaders.CHIP[kindOf(f)]||({pdf:"PDF",xls:"Excel",doc:"Word",ppt:"PowerPoint",aud:"Audio",img:"Imagen"})[kindOf(f)]||"Archivo")+" · "+f.name;th.appendChild(sp)}});
   const tx=$("#btx");tx.oninput=()=>{IMP.texto=tx.value;const b=$("#bread")||$("#bsave");if(b)b.disabled=!(IMP.files.length||IMP.texto.trim())};
   const cl=$("#bclr");if(cl)cl.onclick=()=>{IMP.files=[];IMP.texto="";drawImp(canImg)};
   const rd=$("#bread");if(rd)rd.onclick=leer;const sv=$("#bsave");if(sv)sv.onclick=()=>archivar("Guardada sin lectura automática").then(()=>{IMP.files=[];IMP.texto="";render()})}
@@ -438,10 +442,11 @@ Cadetes posibles: ${R.map(c=>c.n).join("; ")}
 Responde SOLO con JSON: {"filas":[{"nombre":"texto","instrumento":número o null,"trabajo":número o null,"evaluacion":número o null}],"notas":"texto o vacío"}. Si una celda es ilegible usa null y explícalo en notas. No inventes cadetes.`}
 async function leer(){const canImg=!!(SAMPLE_LIM&&SAMPLE_LIM.images);IMP.st="leyendo";IMP.msg=IMP.files.length?"Se están leyendo los archivos…":"Se está leyendo el texto…";drawImp(canImg);
   try{const opts={modelTier:"complex",cache:false};
-    const A=await prepararArchivos(canImg);if(A.imgs.length)opts.images=A.imgs;
-    if(!A.imgs.length&&!A.texto.trim()&&!IMP.texto.trim())throw {code:A.omit?"images_unavailable":"empty"};
-    if(A.omit)toast(`${A.omit} foto${A.omit>1?"s":""} o página${A.omit>1?"s":""} no se ${A.omit>1?"pudieron":"pudo"} enviar en esta lectura.`);
-    const base=IMP.tipo==="cal"?promptCal():promptNov();let extra=(IMP.texto.trim()?`\n\nTexto de la bitácora:\n"""\n${IMP.texto.trim()}\n"""`:"")+(A.texto.trim()?`\n\nContenido de los archivos adjuntos:\n"""${A.texto}\n"""`:"");
+    const A=await prepararArchivos(canImg);if(A.imgs&&A.imgs.length)opts.images=A.imgs;
+    IMP.extracto=A.texto||"";IMP.notes=A.notes||[];
+    if(!(A.imgs&&A.imgs.length)&&!A.texto.trim()&&!IMP.texto.trim()){if((A.notes||[]).length){IMP.res={notas:(A.notes||[]).join("\n"),eventos:[],filas:[],partes:[]};IMP.st="rev";render();return}throw {code:A.omit?"images_unavailable":"empty"};}
+    if(A.notes&&A.notes.length)toast(A.notes[0]);
+    const base=IMP.tipo==="cal"?promptCal():promptNov();let extra=(IMP.texto.trim()?`\n\nTexto de la bitácora:\n"""\n${IMP.texto.trim()}\n"""`:"")+(A.texto.trim()?`\n\nContenido de los archivos adjuntos:\n"""${A.texto}\n"""`:"")+(A.notes&&A.notes.length?`\n\nNotas de la lectura automática:\n"""\n${A.notes.join("\n")}\n"""`:"");
     const lim=(SAMPLE_LIM&&SAMPLE_LIM.maxPromptBytes||400000)-new TextEncoder().encode(base).length-2000;if(new TextEncoder().encode(extra).length>lim){extra=extra.slice(0,Math.floor(lim/2));toast("El archivo es muy largo; se leyó solo la primera parte.")}
     const r=await SAMPLE.json(base+extra,opts)||{};
     const res={notas:r.notas||"",partes:[],eventos:[],filas:[]};
@@ -449,8 +454,8 @@ async function leer(){const canImg=!!(SAMPLE_LIM&&SAMPLE_LIM.images);IMP.st="ley
     else{res.partes=(r.partes||[]).filter(x=>S.prac.has(x.practica)).map(x=>({...x,ok:true}));
       res.eventos=(r.eventos||[]).map(x=>{const pool=x.practica&&S.prac.has(x.practica)?roster(x.practica):cads();let cid=matchCad(x.nombre,pool)||matchCad(x.nombre,cads());
         return {...x,practica:x.practica&&S.prac.has(x.practica)?x.practica:(cid&&pracActual({id:cid,...S.cad.get(cid)},isoOk(x.fecha)?x.fecha:IMP.f)||{}).p||"",cid,ok:!!cid}})}
-    IMP.res=res;IMP.st="rev"}
-  catch(e){console.error(e);IMP.st="form";toast(e&&e.code==="not_granted"?"No se pudo usar el lector de archivos en esta página.":e&&e.code==="images_unavailable"?"Esta réplica no lee fotos ni PDF escaneados: pega el texto o sube el archivo en Excel, Word o un PDF con texto.":e&&e.code==="empty"?"El archivo no tiene texto legible.":e&&/docx/.test(e.message||"")?"El Word no se pudo abrir; guárdalo como .docx e inténtalo otra vez.":e&&e.code==="rate_limited"?"El lector está ocupado; inténtalo en un minuto.":"No se pudo leer la bitácora. Si es una foto, pega el texto o sube un Excel, Word o PDF con texto.")}
+    if((IMP.notes||[]).length)res.notas=((res.notas?res.notas+" ":"")+IMP.notes.join(" ")).trim();IMP.res=res;IMP.st="rev"}
+  catch(e){console.error(e);IMP.st="form";toast(e&&e.code==="not_granted"?"No se pudo usar el lector de archivos en esta página.":e&&e.code==="images_unavailable"?"No se pudo leer la imagen o el PDF escaneado. Prueba con una foto más nítida o pega el texto.":e&&e.code==="empty"?"El archivo no tiene texto legible.":e&&/docx/.test(e.message||"")?"El Word no se pudo abrir; guárdalo como .docx e inténtalo otra vez.":e&&e.code==="rate_limited"?"El lector está ocupado; inténtalo en un minuto.":"No se pudo leer la bitácora. Revisa el archivo o pega el texto.")}
   render()}
 function drawRev(box){const R=IMP.res,cal=IMP.tipo==="cal";const optsCad=(sel,pool)=>`<option value="">— Elegir cadete —</option>${pool.map(c=>`<option value="${c.id}" ${sel===c.id?"selected":""}>${esc(c.n)} (${ANIO[c.a]} ${esc(c.g)})</option>`).join("")}`;
   const all=cads().sort(cmpCad);
@@ -467,6 +472,7 @@ function drawRev(box){const R=IMP.res,cal=IMP.tipo==="cal";const optsCad=(sel,po
     <td><select class="tp">${TIPOS.map(([k,l])=>`<option value="${k}" ${x.tipo===k?"selected":""}>${l}</option>`).join("")}</select></td>
     <td><select class="mo"><option value="">—</option>${motOpts(x.motivo)}</select></td>
     <td><input type="checkbox" class="jj" ${x.justificada!==false?"checked":""} style="width:18px" aria-label="Justificada"></td><td>${esc(x.texto||"")}</td></tr>`).join("")}</tbody></table></div>`:`<p class="hint">No se nombró a ningún cadete.</p>`}`}
+  ${IMP.extracto?`<details id="textoLeido" style="margin-top:12px" open><summary>Texto leído en los archivos</summary><pre id="extractoTxt" class="hint" style="white-space:pre-wrap;max-height:240px;overflow:auto;margin-top:8px">${esc(IMP.extracto)}</pre></details>`:""}
   <div class="acts" style="margin-top:12px"><button class="btn ghost" id="rcan">Descartar</button><button class="btn" id="rap">Aplicar y guardar bitácora</button></div>`;
   box.querySelectorAll("tr[data-i]").forEach(tr=>{const x=R.filas[+tr.dataset.i];tr.querySelector(".ok").onchange=e=>x.ok=e.target.checked;tr.querySelector(".cs").onchange=e=>{x.cid=e.target.value;tr.classList.toggle("unm",!x.cid);if(x.cid){x.ok=true;tr.querySelector(".ok").checked=true}};tr.querySelectorAll(".v").forEach(i=>i.onchange=()=>x[i.dataset.k]=num(i.value))});
   box.querySelectorAll("tr[data-pi]").forEach(tr=>{const x=R.partes[+tr.dataset.pi];tr.querySelector(".ok").onchange=e=>x.ok=e.target.checked;tr.querySelector(".tt").onchange=e=>x.total=num(e.target.value)});
@@ -488,10 +494,11 @@ async function aplicar(){const R=IMP.res,f=IMP.f;let n=0,pa=0;
   const res=IMP.tipo==="cal"?`${n} calificaciones aplicadas`:`${pa?`${pa} parte${pa===1?"":"s"} y `:""}${n} novedad${n===1?"":"es"} aplicada${n===1?"":"s"}`;
   await archivar(res);IMP.st="form";IMP.res=null;IMP.files=[];IMP.texto="";render();toast(res)}
 async function archivar(resumen){const imgs=[];
-  if(ASSETS)for(const f of IMP.files){try{const k=kindOf(f);let b=f;if(k==="img")b=await shrink(f);else if(k==="xls")b=new Blob([await xlsText(f)],{type:"text/csv"});else if(k==="doc")b=new Blob([await docText(f)],{type:"text/plain"});
-    const u=await ASSETS.upload(b,k==="xls"?{type:"text/csv"}:k==="doc"?{type:"text/plain"}:undefined);imgs.push({id:u.id,url:u.url,k,name:f.name})}catch(e){console.warn(e)}}
-  else if(IMP.files.length)toast("Esta vista no puede guardar fotos; se guardó solo el resumen.");
-  const d={f:IMP.f,tipo:IMP.tipo,imgs,texto:IMP.texto.trim(),resumen,at:new Date().toISOString()};if(IMP.tipo==="cal")d.mk=IMP.mk;
+  if(ASSETS)for(const f of IMP.files){try{const k=kindOf(f);let b=f;if(k==="img")b=await shrink(f);
+    const u=await ASSETS.upload(b,{type:f.type||undefined,name:f.name});imgs.push({id:u.id,url:u.url,k,name:f.name})}catch(e){console.warn(e)}}
+  else if(IMP.files.length)toast("Esta vista no puede guardar archivos adjuntos; se guardó solo el resumen.");
+  const texto=[IMP.texto.trim(),IMP.extracto?("--- Texto leído ---\n"+IMP.extracto):""].filter(Boolean).join("\n\n");
+  const d={f:IMP.f,tipo:IMP.tipo,imgs,texto,resumen,at:new Date().toISOString()};if(IMP.tipo==="cal")d.mk=IMP.mk;
   return put("bitacoras",uid(),d,true)}
 
 /* Ajustes y exportación */
@@ -573,5 +580,5 @@ async function exportar(){const b=$("#xl");b.disabled=true;b.textContent="Prepar
   sub("practicas",S.prac,true);sub("cadetes",S.cad,true);sub("eventos",S.ev);sub("partes",S.par);sub("bitacoras",S.bit);
   db.doc("ajustes/general").onSnapshot(s=>{if(s.exists)S.cfg={...S.cfg,...s.data()};render()},()=>{});
   Promise.all([window.claude.use("sample"),window.claude.use("assets"),window.claude.use("downloads")]).then(async([s,a,d])=>{SAMPLE=s;ASSETS=a;DL=d;
-    if(s){try{SAMPLE_LIM=await s.limits()}catch(e){}}if(S.view==="bit"||S.view==="cfg")render()});
+    if(s){try{SAMPLE_LIM=await s.limits()}catch(e){}}if(S.view==="bit"||S.view==="cfg"||S.view==="est")render()});
 })();

@@ -20,7 +20,7 @@
   <header class="top">
     <div class="monitor"><canvas id="ecg" aria-hidden="true"></canvas>
       <div class="ttl"><div><p class="inst"><span class="live" aria-hidden="true"></span>Esc. Mil. Enfría. · Subsección de Práctica Clínica · Réplica local</p>
-        <h1>Seguimiento de <em>práctica clínica</em> <span class='yr y2' style='vertical-align:middle;font-size:12px'>réplica v1.0</span></h1><p class="clock" id="clock"></p></div>
+        <h1>Seguimiento de <em>práctica clínica</em> <span class='yr y2' style='vertical-align:middle;font-size:12px'>réplica v1.1</span></h1><p class="clock" id="clock"></p></div>
         <div class="readout" id="readout"><small>Asistencia · último parte</small><b>—</b></div></div></div>
     <nav class="tabs" role="tablist" aria-label="Secciones">
       <button role="tab" data-v="pan" aria-selected="true">Panorama</button>
@@ -28,6 +28,7 @@
       <button role="tab" data-v="cad" aria-selected="false">Cadetes</button>
       <button role="tab" data-v="nov" aria-selected="false">Novedades</button>
       <button role="tab" data-v="cal" aria-selected="false">Calificaciones</button>
+      <button role="tab" data-v="est" aria-selected="false">Estadísticas</button>
       <button role="tab" data-v="bit" aria-selected="false">Bitácoras</button>
       <button role="tab" data-v="cfg" aria-selected="false">Ajustes</button>
     </nav>
@@ -44,6 +45,10 @@
 <script src="shim.js"></script>
 <script src="app.js"></script>
 <script src="import-export.js"></script>
+<script src="ocr.js"></script>
+<script src="transcribe.js"></script>
+<script src="readers.js"></script>
+<script src="estadisticas.js"></script>
 <script src="boot.js"></script>
 </body>
 </html>

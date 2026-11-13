@@ -526,11 +526,11 @@
     const isCal = /Lee la lista de calificaciones/.test(prompt) || /JSON:\s*\{"filas"/.test(prompt);
     if (isCal) {
       const filas = parseCalText(text);
-      if (!filas.length) notas.push("No se encontraron calificaciones en el texto. Esta réplica no lee fotos; pega el texto o sube un Excel.");
+      if (!filas.length) notas.push("No se encontraron calificaciones en el texto. Revisa el texto leído o pega las notas.");
       return { filas, notas: notas.join(" ") };
     }
     const eventos = parseNovFromText(text);
-    if (!eventos.length) notas.push("No se pudieron extraer novedades con el lector local (esta réplica no usa inteligencia artificial ni transcribe fotos). Pega el texto, sube un Excel o Word con texto, o captura los datos en Parte del día y en Novedades.");
+    if (!eventos.length) notas.push("No se pudieron extraer novedades con certeza. Revisa el texto leído abajo, corrige las filas si hace falta o captura los datos en Parte del día y en Novedades. El reconocimiento óptico y la transcripción no son perfectos.");
     return { eventos, partes: [], notas: notas.join(" ") };
   }
 
@@ -579,13 +579,60 @@
       return eventos;
     }
     const dateRe = /(\d{4}-\d{2}-\d{2})|(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})/g;
+    const cadList = typeof cads === "function" ? cads().slice().sort((a, b) => (b.n || "").length - (a.n || "").length) : [];
+    /* Bloques «Clave: valor» en renglones separados (PDF, OCR, audio) */
+    const blocks = [];
+    let cur = null;
+    for (const raw of lines) {
+      const m = raw.trim().match(/^(fecha|nombre|cadete|tipo|motivo|d[ií]as?)\s*[:.\-]\s*(.+)$/i);
+      if (!m) continue;
+      const k = norm(m[1]).replace(/s$/, "");
+      if (k === "nombre" || k === "cadete") { if (cur && cur.nombre) blocks.push(cur); cur = Object.assign({}, cur && !cur.nombre ? cur : {}, { nombre: m[2].trim() }); }
+      else { cur = cur || {}; if (cur[k] && cur.nombre) { blocks.push(cur); cur = {}; } cur[k] = m[2].trim(); }
+    }
+    if (cur && cur.nombre) blocks.push(cur);
+    blocks.forEach(b => {
+      const hit = cadList.find(c => c.n && norm(b.nombre).includes(norm(c.n)));
+      const nombre = hit ? hit.n : b.nombre;
+      const t = norm(b.tipo || "");
+      const tipo = /retardo/.test(t) ? "retardo" : /anecdot/.test(t) ? "anecdota" : /arresto/.test(t) ? "arresto" : "falta";
+      const mot = b.motivo ? MOT_ALL.find(m => m.slice(1).some(f => f && norm(b.motivo).includes(norm(f)))) : null;
+      const dm = (b.fecha || "").match(dateRe);
+      eventos.push({ nombre, fecha: dm ? cellIso(dm[0], 2026) : "", dias: parseInt(b.dia, 10) || 1, tipo, motivo: mot ? mot[0] : "", justificada: true, polaridad: "", horas: null, texto: [b.fecha, b.tipo, b.motivo].filter(Boolean).join(" · ") });
+    });
+    if (blocks.length) return eventos;
     for (const line of lines) {
       const L = line.trim();
-      if (L.length < 8) continue;
+      if (L.length < 6) continue;
+      if (/^fecha\b/i.test(L) && /nombre|motivo/i.test(L)) continue;
       const dates = L.match(dateRe);
-      const mot = MOT_ALL.find(m => m.slice(1).some(f => norm(L).includes(norm(f))));
-      if (!dates && !mot) continue;
-      // try to pick a cadet name as the longest capitalized span — conservative: skip if unclear
+      const mot = MOT_ALL.find(m => m.slice(1).some(f => f && norm(L).includes(norm(f))));
+      let tipo = "falta";
+      if (/retardo/i.test(L)) tipo = "retardo";
+      else if (/anecdot/i.test(L)) tipo = "anecdota";
+      else if (/arresto/i.test(L)) tipo = "arresto";
+      let nombre = "";
+      for (const c of cadList) {
+        if (c.n && norm(L).includes(norm(c.n))) { nombre = c.n; break; }
+      }
+      if (!nombre) {
+        const mat = L.match(/\b([ADC]-?\d{5,})\b/i);
+        if (mat) {
+          const raw = mat[1].toUpperCase().replace(/^(A|D|C)(\d)/, "$1-$2");
+          const found = cadList.find(c => (c.mat || "").toUpperCase() === raw || (c.mat || "").replace(/-/g, "") === raw.replace(/-/g, ""));
+          if (found) nombre = found.n;
+        }
+      }
+      if (!nombre) {
+        const nm = L.match(/nombre\s*[:.\-]\s*(.+)$/i);
+        if (nm) nombre = nm[1].replace(/[,;].*$/, "").trim();
+      }
+      if (!nombre) continue;
+      if (!dates && !mot && tipo === "falta" && !/inasist|falta/i.test(L)) continue;
+      const fecha = dates && dates[0] ? cellIso(dates[0], 2026) : "";
+      const already = eventos.some(e => e.nombre === nombre && e.fecha === fecha && e.tipo === tipo);
+      if (already) continue;
+      eventos.push({ nombre, fecha, dias: 1, tipo, motivo: mot ? mot[0] : "", justificada: true, polaridad: "", horas: null, texto: L });
     }
     return eventos;
   }
@@ -609,7 +656,7 @@
 </section>
 <section class="box">
   <h3>Acerca de esta réplica</h3>
-  <p class="hint">Versión 1.0 · App independiente de «Seguimiento de práctica clínica» (seguimiento-discentes). Esta réplica no envía datos a Claude ni a ningún servidor. Las fotos de las bitácoras se guardan aquí, pero no se transcriben solas: para leerlas pega el texto o sube un Excel, Word o PDF con texto.</p>
+  <p class="hint">Versión 1.1 · App independiente de «Seguimiento de práctica clínica» (seguimiento-discentes). Esta réplica no envía datos a Claude ni a ningún servidor. Lee PDF, Excel, Word, PowerPoint, fotos (OCR) y, si el dispositivo lo permite, audio; conviene revisar lo leído antes de aplicar.</p>
 </section>`;
     /* Insert the backup box after the first section (concentrado) */
     const first = VW.querySelector("section.box");

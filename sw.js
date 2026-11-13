@@ -1,4 +1,4 @@
-const C = "practica-clinica-partes-v1.0";
+const C = "practica-clinica-partes-v1.1";
 const A = [
   "./",
   "./index.html",
@@ -7,6 +7,10 @@ const A = [
   "./shim.js",
   "./import-export.js",
   "./boot.js",
+  "./estadisticas.js",
+  "./readers.js",
+  "./transcribe.js",
+  "./ocr.js",
   "./manifest.json",
   "./icon.svg",
   "./icon-192.png",
@@ -41,7 +45,8 @@ self.addEventListener("activate", e => {
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
   const url = new URL(e.request.url);
-  if (url.origin !== location.origin) return;
+  const ext = /(?:cdn\.jsdelivr\.net|cdn\.jsdelivr\.com|huggingface\.co|hf-mirror\.com)$/.test(url.hostname);
+  if (url.origin !== location.origin && !ext) return;
   e.respondWith(
     caches.match(e.request, { ignoreSearch: true }).then(r => r || fetch(e.request).then(n => {
       if (n.ok) {
