@@ -448,15 +448,19 @@ async function leer(){const canImg=!!(SAMPLE_LIM&&SAMPLE_LIM.images);IMP.st="ley
     if(A.notes&&A.notes.length)toast(A.notes[0]);
     const base=IMP.tipo==="cal"?promptCal():promptNov();let extra=(IMP.texto.trim()?`\n\nTexto de la bitácora:\n"""\n${IMP.texto.trim()}\n"""`:"")+(A.texto.trim()?`\n\nContenido de los archivos adjuntos:\n"""${A.texto}\n"""`:"")+(A.notes&&A.notes.length?`\n\nNotas de la lectura automática:\n"""\n${A.notes.join("\n")}\n"""`:"");
     const lim=(SAMPLE_LIM&&SAMPLE_LIM.maxPromptBytes||400000)-new TextEncoder().encode(base).length-2000;if(new TextEncoder().encode(extra).length>lim){extra=extra.slice(0,Math.floor(lim/2));toast("El archivo es muy largo; se leyó solo la primera parte.")}
-    const r=await SAMPLE.json(base+extra,opts)||{};
+    window.__bitSemana=IMP.f;const r=await SAMPLE.json(base+extra,opts)||{};
     const res={notas:r.notas||"",partes:[],eventos:[],filas:[]};
     if(IMP.tipo==="cal"){const pool=cads().filter(c=>c.asig&&c.asig[IMP.mk]);res.filas=(r.filas||[]).map(x=>({...x,cid:matchCad(x.nombre,pool),ok:true}))}
     else{res.partes=(r.partes||[]).filter(x=>S.prac.has(x.practica)).map(x=>({...x,ok:true}));
-      res.eventos=(r.eventos||[]).map(x=>{const pool=x.practica&&S.prac.has(x.practica)?roster(x.practica):cads();let cid=matchCad(x.nombre,pool)||matchCad(x.nombre,cads());
-        return {...x,practica:x.practica&&S.prac.has(x.practica)?x.practica:(cid&&pracActual({id:cid,...S.cad.get(cid)},isoOk(x.fecha)?x.fecha:IMP.f)||{}).p||"",cid,ok:!!cid}})}
+      res.eventos=(r.eventos||[]).map(x=>{const cid=x.cid&&S.cad.has(x.cid)?x.cid:(matchCad(x.nombre,cads())||"");return asignarEv({...x,cid})})}
     if((IMP.notes||[]).length)res.notas=((res.notas?res.notas+" ":"")+IMP.notes.join(" ")).trim();IMP.res=res;IMP.st="rev"}
   catch(e){console.error(e);IMP.st="form";toast(e&&e.code==="not_granted"?"No se pudo usar el lector de archivos en esta página.":e&&e.code==="images_unavailable"?"No se pudo leer la imagen o el PDF escaneado. Prueba con una foto más nítida o pega el texto.":e&&e.code==="empty"?"El archivo no tiene texto legible.":e&&/docx/.test(e.message||"")?"El Word no se pudo abrir; guárdalo como .docx e inténtalo otra vez.":e&&e.code==="rate_limited"?"El lector está ocupado; inténtalo en un minuto.":"No se pudo leer la bitácora. Revisa el archivo o pega el texto.")}
   render()}
+/* Práctica de cada novedad leída: (a) materia o sede escrita, (b) instructora, (c) por decidir. La fecha solo desempata. */
+function asignarEv(x){const ctxA={practicas:pracs(),cadById:S.cad};
+  const a=window.ReplicaBit?ReplicaBit.asignar({...x,fecha:isoOk(x.fecha)?x.fecha:""},ctxA):{practica:x.practica&&S.prac.has(x.practica)?x.practica:"",regla:x.practica?"indicada en el texto":"por decidir",candidatos:[],aviso:""};
+  return {...x,practica:a.practica,regla:a.regla,candidatos:a.candidatos||[],aviso:a.aviso||"",ok:!!(x.cid&&a.practica)}}
+const REGLA_TXT=r=>!r?"":r==="por decidir"?"Por asignar":r==="elegida por ti"?"Elegida por ti":r.replace(/^./,c=>c.toUpperCase());
 function drawRev(box){const R=IMP.res,cal=IMP.tipo==="cal";const optsCad=(sel,pool)=>`<option value="">— Elegir cadete —</option>${pool.map(c=>`<option value="${c.id}" ${sel===c.id?"selected":""}>${esc(c.n)} (${ANIO[c.a]} ${esc(c.g)})</option>`).join("")}`;
   const all=cads().sort(cmpCad);
   box.innerHTML=`<h3>Revisa lo que se leyó · ${fLarga(IMP.f)}</h3>${R.notas?`<p class="notice" style="margin-top:8px">${esc(R.notas)}</p>`:""}
@@ -466,19 +470,36 @@ function drawRev(box){const R=IMP.res,cal=IMP.tipo==="cal";const optsCad=(sel,po
   :`${R.partes.length?`<h3 style="margin-top:12px;border:0;padding:0">Partes por práctica</h3>`:""}
   ${R.partes.length?`<div class="tscroll" style="margin-top:6px"><table class="tbl" style="min-width:600px"><thead><tr><th class="num">Usar</th><th>Práctica</th><th class="num">Asistieron</th><th class="num">Efectivo</th><th>Novedades</th></tr></thead><tbody>
     ${R.partes.map((x,i)=>{const p=S.prac.get(x.practica);const ya=S.par.has(parteKey(IMP.f,x.practica));return `<tr data-pi="${i}"><td class="num"><input type="checkbox" class="ok" ${x.ok?"checked":""} style="width:18px"></td><td>${esc(pracLabel({id:x.practica,...p},true))}${ya?`<span class="sub" style="color:var(--warn)">Reemplaza el parte ya guardado</span>`:""}</td><td class="num">${x.asistieron??"—"}</td><td class="num"><input type="number" class="tt" value="${x.total??efectivo({id:x.practica,...p})}"></td><td>${(x.novedades||[]).map(n=>esc(novTxt({n:n.n,m:n.motivo,x:n.texto}))).join("<br>")||"Sin novedad"}</td></tr>`}).join("")}</tbody></table></div>`:""}
-  <h3 style="margin-top:12px;border:0;padding:0">Novedades por cadete</h3>
-  ${R.eventos.length?`<div class="tscroll" style="margin-top:6px"><table class="tbl" style="min-width:960px"><thead><tr><th class="num">Usar</th><th>Leído</th><th>Cadete</th><th>Fecha</th><th class="num">Días</th><th>Tipo</th><th>Motivo</th><th>J</th><th>Detalle</th></tr></thead><tbody>
-    ${R.eventos.map((x,i)=>`<tr class="${x.cid?"":"unm"}" data-ei="${i}"><td class="num"><input type="checkbox" class="ok" ${x.ok?"checked":""} style="width:18px"></td><td>${esc(x.nombre)}</td><td><select class="cs">${optsCad(x.cid,all)}</select></td><td><input type="date" class="fe" value="${isoOk(x.fecha)?x.fecha:IMP.f}" style="width:140px"></td><td class="num"><input type="number" class="dd" min="1" value="${Math.max(1,Math.round(num(x.dias)||1))}"></td>
+  ${(()=>{const P=pracs();const pOpts=x=>{const C=(x.candidatos||[]).filter(id=>S.prac.has(id));const R=P.filter(p=>!C.includes(p.id));
+      const o=id=>{const p=S.prac.get(id);return `<option value="${id}" ${x.practica===id?"selected":""}>${esc(pracLabel({id,...p},true))}</option>`};
+      return `<option value="">— Elegir práctica —</option>${C.length?`<optgroup label="Candidatas">${C.map(o).join("")}</optgroup><optgroup label="Otras prácticas">${R.map(p=>o(p.id)).join("")}</optgroup>`:P.map(p=>o(p.id)).join("")}`};
+    const row=(x,i)=>`<tr class="${x.cid&&x.practica?"":"unm"}" data-ei="${i}"><td class="num"><input type="checkbox" class="ok" ${x.ok&&x.cid&&x.practica?"checked":""} ${x.cid&&x.practica?"":"disabled"} style="width:18px" aria-label="Usar"></td><td>${esc(x.leido||x.nombre||"")}</td><td><select class="cs">${optsCad(x.cid,all)}</select></td>
+    <td><select class="pr" aria-label="Práctica">${pOpts(x)}</select>${x.aviso?`<span class="sub" style="color:var(--warn)">${esc(x.aviso)}</span>`:""}</td><td><span class="sub" style="margin:0">${esc(REGLA_TXT(x.regla))}</span></td>
+    <td><input type="date" class="fe" value="${isoOk(x.fecha)?x.fecha:IMP.f}" style="width:140px"></td><td class="num"><input type="number" class="dd" min="1" value="${Math.max(1,Math.round(num(x.dias)||1))}"></td>
     <td><select class="tp">${TIPOS.map(([k,l])=>`<option value="${k}" ${x.tipo===k?"selected":""}>${l}</option>`).join("")}</select></td>
     <td><select class="mo"><option value="">—</option>${motOpts(x.motivo)}</select></td>
-    <td><input type="checkbox" class="jj" ${x.justificada!==false?"checked":""} style="width:18px" aria-label="Justificada"></td><td>${esc(x.texto||"")}</td></tr>`).join("")}</tbody></table></div>`:`<p class="hint">No se nombró a ningún cadete.</p>`}`}
+    <td><input type="checkbox" class="jj" ${x.justificada!==false?"checked":""} style="width:18px" aria-label="Justificada"></td><td>${esc([x.servicio&&!String(x.texto||"").includes(x.servicio)?x.servicio:"",x.texto||""].filter(Boolean).join(" · "))}</td></tr>`;
+    const head=`<thead><tr><th class="num">Usar</th><th>Leído</th><th>Cadete</th><th>Práctica</th><th>Cómo se asignó</th><th>Fecha</th><th class="num">Días</th><th>Tipo</th><th>Motivo</th><th>J</th><th>Detalle</th></tr></thead>`;
+    const pend=R.eventos.map((x,i)=>[x,i]).filter(([x])=>!x.practica||!x.cid),lis=R.eventos.map((x,i)=>[x,i]).filter(([x])=>x.practica&&x.cid);
+    const H=(window.__bitEncabezados||[]).filter(h=>h.materia||h.sede||h.docente);
+    return `${H.length?`<p class="hint" style="margin-top:10px">Encabezado leído: ${H.map(h=>esc([h.materia&&"Materia: "+h.materia,h.sede&&"Sede: "+h.sede,h.docente&&"Docente: "+h.docente].filter(Boolean).join(" · "))).join(" | ")}</p>`:""}
+    <h3 style="margin-top:12px;border:0;padding:0">Pendientes por asignar (${pend.length})</h3>
+    ${pend.length?`<p class="hint">La bitácora no dice con certeza a qué práctica van (o falta el cadete). Elige la práctica de cada una; no se guardan hasta que la elijas y oprimas Aplicar.</p>
+    <div class="bar" style="margin:6px 0"><label class="hint" for="pall">Todas las pendientes a:</label><select id="pall"><option value="">— Elegir práctica —</option>${P.map(p=>`<option value="${p.id}">${esc(pracLabel(p,true))}</option>`).join("")}</select><button class="btn ghost" type="button" id="pallgo">Asignar</button></div>
+    <div class="tscroll"><table class="tbl" style="min-width:1180px">${head}<tbody>${pend.map(([x,i])=>row(x,i)).join("")}</tbody></table></div>`:`<p class="hint">Ninguna.</p>`}
+    <h3 style="margin-top:12px;border:0;padding:0">Novedades por cadete (${lis.length})</h3>
+    ${lis.length?`<div class="tscroll" style="margin-top:6px"><table class="tbl" style="min-width:1180px">${head}<tbody>${lis.map(([x,i])=>row(x,i)).join("")}</tbody></table></div>`:`<p class="hint">No se nombró a ningún cadete con práctica asignada.</p>`}
+    <div class="acts" style="justify-content:flex-start;margin-top:8px"><button class="btn ghost" type="button" id="radd">Agregar renglón</button></div>`})()}`}
   ${IMP.extracto?`<details id="textoLeido" style="margin-top:12px" open><summary>Texto leído en los archivos</summary><pre id="extractoTxt" class="hint" style="white-space:pre-wrap;max-height:240px;overflow:auto;margin-top:8px">${esc(IMP.extracto)}</pre></details>`:""}
   <div class="acts" style="margin-top:12px"><button class="btn ghost" id="rcan">Descartar</button><button class="btn" id="rap">Aplicar y guardar bitácora</button></div>`;
   box.querySelectorAll("tr[data-i]").forEach(tr=>{const x=R.filas[+tr.dataset.i];tr.querySelector(".ok").onchange=e=>x.ok=e.target.checked;tr.querySelector(".cs").onchange=e=>{x.cid=e.target.value;tr.classList.toggle("unm",!x.cid);if(x.cid){x.ok=true;tr.querySelector(".ok").checked=true}};tr.querySelectorAll(".v").forEach(i=>i.onchange=()=>x[i.dataset.k]=num(i.value))});
   box.querySelectorAll("tr[data-pi]").forEach(tr=>{const x=R.partes[+tr.dataset.pi];tr.querySelector(".ok").onchange=e=>x.ok=e.target.checked;tr.querySelector(".tt").onchange=e=>x.total=num(e.target.value)});
-  box.querySelectorAll("tr[data-ei]").forEach(tr=>{const x=R.eventos[+tr.dataset.ei];tr.querySelector(".ok").onchange=e=>x.ok=e.target.checked;
-    tr.querySelector(".cs").onchange=e=>{x.cid=e.target.value;tr.classList.toggle("unm",!x.cid);if(x.cid){x.ok=true;tr.querySelector(".ok").checked=true}};
+  box.querySelectorAll("tr[data-ei]").forEach(tr=>{const i=+tr.dataset.ei,x=R.eventos[i];tr.querySelector(".ok").onchange=e=>x.ok=e.target.checked;
+    tr.querySelector(".cs").onchange=e=>{x.cid=e.target.value;if(x.regla!=="elegida por ti"){const y=asignarEv(x);Object.assign(x,y)}x.ok=!!(x.cid&&x.practica);drawRev(box)};
+    tr.querySelector(".pr").onchange=e=>{x.practica=e.target.value;x.regla=x.practica?"elegida por ti":"por decidir";x.aviso=x.practica?"":x.aviso;x.ok=!!(x.cid&&x.practica);drawRev(box)};
     tr.querySelector(".fe").onchange=e=>x.fecha=e.target.value;tr.querySelector(".dd").onchange=e=>x.dias=num(e.target.value);tr.querySelector(".tp").onchange=e=>x.tipo=e.target.value;tr.querySelector(".mo").onchange=e=>{x.motivo=e.target.value;if(x.motivo==="injust"){x.justificada=false;tr.querySelector(".jj").checked=false}};tr.querySelector(".jj").onchange=e=>x.justificada=e.target.checked});
+  const pg=$("#pallgo");if(pg)pg.onclick=()=>{const v=$("#pall").value;if(!v){toast("Elige la práctica");return}R.eventos.forEach(x=>{if(!x.practica){x.practica=v;x.regla="elegida por ti";x.aviso="";x.ok=!!x.cid}});drawRev(box)};
+  const ra=$("#radd");if(ra)ra.onclick=()=>{R.eventos.push({nombre:"",leido:"(agregado a mano)",cid:"",fecha:IMP.f,dias:1,tipo:"falta",motivo:"",justificada:true,texto:"",practica:"",regla:"por decidir",candidatos:[],aviso:"",ok:false});drawRev(box)};
   $("#rcan").onclick=()=>{IMP.st="form";IMP.res=null;render()};
   $("#rap").onclick=aplicar}
 async function aplicar(){const R=IMP.res,f=IMP.f;let n=0,pa=0;
@@ -487,7 +508,10 @@ async function aplicar(){const R=IMP.res,f=IMP.f;let n=0,pa=0;
   else{R.partes.filter(x=>x.ok).forEach(x=>{const p=S.prac.get(x.practica);let tot=num(x.total)??efectivo({id:x.practica,...p});const nov=(x.novedades||[]).map(v=>({n:num(v.n)||1,m:MOT_TXT[v.motivo]?v.motivo:"otro",x:v.texto||""}));
       if(!nov.length&&num(x.asistieron)!=null&&num(x.asistieron)<tot)nov.push({n:tot-num(x.asistieron),m:"otro",x:"sin motivo en la bitácora"});
       const fp=isoOk(x.fecha)?x.fecha:f;put("partes",parteKey(fp,x.practica),{f:fp,p:x.practica,tot,nov,src:"bitacora"},true);pa++});
-    for(const x of R.eventos.filter(x=>x.ok&&x.cid)){const e={f:isoOk(x.fecha)?x.fecha:f,c:x.cid,p:x.practica||"",t:x.tipo||"falta",x:x.texto||""};const dd=Math.round(num(x.dias)||1);if(dd>1)e.d=dd;
+    const sinP=R.eventos.filter(x=>x.cid&&!x.practica).length;
+    if(sinP&&!confirm(`${sinP} novedad${sinP===1?"":"es"} sigue${sinP===1?"":"n"} sin práctica y no se guardará${sinP===1?"":"n"}. ¿Aplicar las demás?`))return;
+    for(const x of R.eventos.filter(x=>x.ok&&x.cid&&x.practica&&S.prac.has(x.practica))){const det=[x.servicio&&!String(x.texto||"").includes(x.servicio)?x.servicio:"",x.texto||""].filter(Boolean).join(" · ");
+      const e={f:isoOk(x.fecha)?x.fecha:f,c:x.cid,p:x.practica,t:x.tipo||"falta",x:det,ra:x.regla||""};const dd=Math.round(num(x.dias)||1);if(dd>1)e.d=dd;
       if(e.t==="falta"){e.m=MOT_TXT[x.motivo]?x.motivo:"otro";e.j=x.justificada!==false&&e.m!=="injust"}
       if(e.t==="anecdota")e.pol=x.polaridad==="pos"?"pos":"neg";if(e.t==="arresto")e.h=num(x.horas);
       const dup=evs().some(o=>o.c===e.c&&o.f===e.f&&o.t===e.t&&(o.p||"")===e.p);if(!dup){await addEv(e);n++}}}

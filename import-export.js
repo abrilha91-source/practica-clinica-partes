@@ -529,7 +529,18 @@
       if (!filas.length) notas.push("No se encontraron calificaciones en el texto. Revisa el texto leído o pega las notas.");
       return { filas, notas: notas.join(" ") };
     }
-    const eventos = parseNovFromText(text);
+    let eventos;
+    if (global.ReplicaBit) {
+      const ctx = {
+        cadetes: typeof cads === "function" ? cads() : [],
+        practicas: typeof pracs === "function" ? pracs() : [],
+        semana: global.__bitSemana || ""
+      };
+      const r = ReplicaBit.parse(text, ctx);
+      eventos = r.eventos;
+      if (r.notas.length) notas.push(...r.notas);
+      global.__bitEncabezados = r.encabezados;
+    } else eventos = parseNovFromText(text);
     if (!eventos.length) notas.push("No se pudieron extraer novedades con certeza. Revisa el texto leído abajo, corrige las filas si hace falta o captura los datos en Parte del día y en Novedades. El reconocimiento óptico y la transcripción no son perfectos.");
     return { eventos, partes: [], notas: notas.join(" ") };
   }
@@ -656,7 +667,20 @@
 </section>
 <section class="box">
   <h3>Acerca de esta réplica</h3>
-  <p class="hint">Versión 1.1 · App independiente de «Seguimiento de práctica clínica» (seguimiento-discentes). Esta réplica no envía datos a Claude ni a ningún servidor. Lee PDF, Excel, Word, PowerPoint, fotos (OCR) y, si el dispositivo lo permite, audio; conviene revisar lo leído antes de aplicar.</p>
+  <p class="hint">Versión 1.2 · App independiente de «Seguimiento de práctica clínica» (seguimiento-discentes). Esta réplica no envía datos a Claude ni a ningún servidor. Lee PDF, Excel, Word, PowerPoint, fotos (OCR) y, si el dispositivo lo permite, audio; conviene revisar lo leído antes de aplicar. Cada novedad se registra en la práctica que dice la bitácora (materia o sede escrita); si no lo dice, por la instructora; si aun así hay duda, queda «Por asignar» y tú eliges.</p>
+</section>
+<section class="box" id="perBox">
+  <h3>Fechas de las prácticas</h3>
+  <p class="hint" style="margin:4px 0 10px">La app usa el inicio y el término de cada práctica para desempatar y para avisar cuando una novedad cae fuera de su periodo. Puedes corregirlas en la tabla de prácticas o traerlas de un archivo JSON (solo cambia fechas y días; no toca cadetes ni novedades).</p>
+  <div class="acts" style="justify-content:flex-start"><button class="btn ghost" type="button" id="perup">Actualizar fechas desde JSON</button></div>
+  <input type="file" id="perFile" accept="application/json,.json" hidden>
+  <p class="hint" style="margin-top:8px" id="perMsg"></p>
+</section>
+<section class="box" id="revBox">
+  <h3>Revisar la práctica de las novedades guardadas</h3>
+  <p class="hint" style="margin:4px 0 10px">Busca novedades que quedaron en una práctica que no corresponde (por ejemplo, en Psiquiatría antes de que empiece, o en una práctica que no es del cadete). Te muestra lo que encontró y nada cambia hasta que confirmes.</p>
+  <div class="acts" style="justify-content:flex-start"><button class="btn" type="button" id="revgo">Revisar novedades</button></div>
+  <div id="revOut" style="margin-top:10px"></div>
 </section>`;
     /* Insert the backup box after the first section (concentrado) */
     const first = VW.querySelector("section.box");
@@ -687,6 +711,32 @@
         console.error(e); toast("No se pudo importar el JSON."); msg("Error al importar el JSON.");
       }
     };
+    if ($id("perup")) $id("perup").onclick = () => $id("perFile").click();
+    if ($id("perFile")) $id("perFile").onchange = async ev => {
+      const f = ev.target.files && ev.target.files[0]; ev.target.value = "";
+      if (!f) return;
+      const pm = $id("perMsg");
+      try {
+        const o = JSON.parse(await f.text());
+        const src = o && o.practicas;
+        if (!src || typeof src !== "object") { toast("El archivo no trae prácticas."); return; }
+        const cambios = [];
+        Object.entries(src).forEach(([id, p]) => {
+          const cur = S.prac.get(id);
+          if (!cur || !p) return;
+          const ini = /^\d{4}-\d{2}-\d{2}$/.test(p.ini || "") ? p.ini : cur.ini, fin = /^\d{4}-\d{2}-\d{2}$/.test(p.fin || "") ? p.fin : cur.fin;
+          const dias = Array.isArray(p.dias) && p.dias.length ? p.dias : cur.dias;
+          if (ini !== cur.ini || fin !== cur.fin || JSON.stringify(dias) !== JSON.stringify(cur.dias)) cambios.push({ id, ini, fin, dias, antes: `${cur.ini} a ${cur.fin}` });
+        });
+        if (!cambios.length) { if (pm) pm.textContent = "Las fechas ya coinciden; no hubo cambios."; return; }
+        const lista = cambios.slice(0, 20).map(c => `• ${(S.prac.get(c.id) || {}).materia || c.id} · ${(S.prac.get(c.id) || {}).sede || ""}: ${c.antes} → ${c.ini} a ${c.fin}`).join("\n");
+        if (!confirm(`Se actualizarán las fechas de ${cambios.length} práctica(s):\n${lista}${cambios.length > 20 ? "\n…" : ""}\n\nNo cambia cadetes ni novedades. ¿Continuar?`)) return;
+        for (const c of cambios) { const cur = Object.assign({}, S.prac.get(c.id), { ini: c.ini, fin: c.fin, dias: c.dias }); await put("practicas", c.id, cur, true); }
+        toast("Fechas de prácticas actualizadas");
+        if (pm) { pm.textContent = `Listo: ${cambios.length} práctica(s) con fechas nuevas.`; pm.style.color = "var(--ok)"; }
+      } catch (e) { console.error(e); toast("No se pudo leer el archivo de fechas."); }
+    };
+    if ($id("revgo") && global.ReplicaRev) $id("revgo").onclick = () => ReplicaRev.mostrar($id("revOut"));
     if ($id("xlFile")) $id("xlFile").onchange = async ev => {
       const f = ev.target.files && ev.target.files[0]; ev.target.value = "";
       if (!f) return;

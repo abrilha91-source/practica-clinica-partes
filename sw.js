@@ -1,4 +1,4 @@
-const C = "practica-clinica-partes-v1.1";
+const C = "practica-clinica-partes-v1.2";
 const A = [
   "./",
   "./index.html",
@@ -9,6 +9,9 @@ const A = [
   "./boot.js",
   "./estadisticas.js",
   "./readers.js",
+  "./xls_tsv.js",
+  "./bitacora.js",
+  "./revision.js",
   "./transcribe.js",
   "./ocr.js",
   "./manifest.json",

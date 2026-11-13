@@ -5,7 +5,7 @@ No es la app [Seguimiento de práctica clínica / seguimiento-discentes](https:/
 
 **Repositorio:** [abrilha91-source/practica-clinica-partes](https://github.com/abrilha91-source/practica-clinica-partes)  
 **Página:** https://abrilha91-source.github.io/practica-clinica-partes/  
-**Versión:** 1.1
+**Versión:** 1.2
 
 ## Qué hace
 
@@ -28,12 +28,28 @@ No se envía nada a un servicio en la nube. Precisión aproximada:
 
 | Formato | Qué se lee | Precisión |
 | --- | --- | --- |
-| Excel / CSV | Celdas con SheetJS | Alta, si el libro no está dañado |
-| Word (.docx) | Texto del XML | Alta en documentos normales; no se leen .doc antiguos |
-| PowerPoint (.pptx) | Texto de las diapositivas | Alta en texto de diapositiva; no se leen .ppt antiguos ni imágenes incrustadas |
-| PDF de texto | Texto con pdf.js | Alta si el PDF tiene capa de texto |
+| Excel / CSV | Celdas con SheetJS, un renglón por línea; celdas combinadas rellenas y fechas en AAAA-MM-DD | Alta, si el libro no está dañado |
+| Word (.docx) | Párrafos y tablas (un renglón de tabla por línea; celdas combinadas hacia abajo rellenas) | Alta en documentos normales; no se leen .doc antiguos |
+| PowerPoint (.pptx) | Texto y tablas de las diapositivas | Alta en texto de diapositiva; no se leen .ppt antiguos ni imágenes incrustadas |
+| PDF de texto | Texto con pdf.js, agrupado por renglón y columna | Alta si el PDF tiene capa de texto |
 | PDF escaneado o foto (JPG, PNG) | OCR con Tesseract (español e inglés), la primera vez descarga los modelos y los deja en caché | Media: buena con letra impresa nítida; baja con letra a mano, sesgo o poca luz. Conviene revisar |
 | MP3 / WAV | Se intenta transcribir en el navegador (Whisper tiny, español), con barra de progreso; si no es viable (memoria, falta de aislamiento del documento o archivo muy largo), el audio se guarda adjunto | Variable y a menudo baja con el modelo pequeño; no sustituye una transcripción revisada |
+
+## Bitácoras de inasistencias (v1.2)
+
+El lector reconoce el formato de la bitácora semanal (Materia, Sede / campo clínico, Docente a cargo, Semana; tabla Fecha / día, Nombre del cadete, Servicio, Motivo), los registros con columnas Práctica, Hospital e Instructora, el texto libre y los bloques «Nombre: / Fecha:». Busca a cada cadete en la lista oficial aunque el nombre venga abreviado o en otro orden.
+
+Cada novedad se registra en la práctica que corresponde, en este orden:
+
+1. **Materia o sede escrita** en la bitácora (encabezado o renglón).
+2. **Instructora o docente a cargo**, cruzada con las prácticas del cadete.
+3. Si aún hay más de una práctica posible, o ninguna, queda en **Pendientes por asignar** y la usuaria la elige antes de guardar.
+
+La fecha solo sirve para desempatar entre las prácticas que ya salieron de 1 o 2, nunca para elegir sola, y evita asignar a una práctica que en esa fecha no estaba en curso. La revisión muestra, por renglón, cómo se asignó.
+
+En **Ajustes → Revisar la práctica de las novedades guardadas** se buscan las novedades que quedaron en una práctica que no es del cadete o fuera de su periodo; se pueden pasar a otra práctica solo con confirmación. **Actualizar fechas desde JSON** cambia solo inicio, término y días de las prácticas.
+
+Las bitácoras escritas a mano y escaneadas se leen con OCR, que reconoce lo impreso pero casi nada de la letra a mano: en ese caso conviene capturar los renglones en la revisión (botón «Agregar renglón») o cargar la transcripción en Excel.
 
 ## Cómo traer el contenido
 

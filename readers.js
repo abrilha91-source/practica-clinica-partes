@@ -31,11 +31,15 @@
       .sort((a, b) => (parseInt(a.match(/(\d+)/)[1], 10) - parseInt(b.match(/(\d+)/)[1], 10)));
     if (!names.length) throw new Error("pptx");
     const parts = [];
+    const tx = x => [...x.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g)].map(m => m[1]).join("");
+    const ent = t => t.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'");
     for (const n of names) {
       const xml = await z.file(n).async("string");
-      const texts = [...xml.matchAll(/<a:t[^>]*>([^<]*)<\/a:t>/g)].map(m => m[1]);
+      /* tablas: una línea por renglón, celdas separadas por tabulador; texto: una línea por párrafo */
+      const flat = xml.replace(/<a:tr[\s>][\s\S]*?<\/a:tr>/g, tr => "<a:p><a:t>" + [...tr.matchAll(/<a:tc[\s>][\s\S]*?<\/a:tc>/g)].map(c => [...c[0].matchAll(/<a:p[\s>][\s\S]*?<\/a:p>/g)].map(p => tx(p[0])).join(" ").replace(/\t/g, " ").trim()).join("\t") + "</a:t></a:p>");
+      const lines = [...flat.matchAll(/<a:p[\s>][\s\S]*?<\/a:p>/g)].map(p => ent(tx(p[0])).replace(/[ ]+$/g, "")).filter(l => l.trim());
       const num = n.match(/slide(\d+)/i)[1];
-      const body = (texts.join(" ").trim() || decodeXml(xml));
+      const body = (lines.join("\n").trim() || decodeXml(xml));
       if (body) parts.push("--- Diapositiva " + num + " ---\n" + body);
     }
     const notes = Object.keys(z.files).filter(n => /ppt\/notesSlides\/notesSlide\d+\.xml$/i.test(n));
@@ -47,6 +51,82 @@
     return parts.join("\n\n").trim();
   }
 
+  /* Word: párrafos en líneas y cada renglón de tabla en una línea con tabuladores (antes cada celda
+     quedaba en otra línea y se perdía qué nombre iba con qué fecha y motivo). */
+  async function docTextRows(f) {
+    const Z = await loadJSZip();
+    const z = await Z.loadAsync(await f.arrayBuffer());
+    const x = z.file("word/document.xml");
+    if (!x) throw new Error("docx");
+    const xml = await x.async("string");
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    const W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+    const kids = (el, name) => [...el.childNodes].filter(c => c.nodeType === 1 && c.localName === name);
+    const txt = el => {
+      let out = "";
+      const walk = n => { for (const c of n.childNodes) { if (c.nodeType !== 1) continue; if (c.localName === "t") out += c.textContent; else if (c.localName === "tab") out += " "; else if (c.localName === "br") out += " "; else walk(c); } };
+      walk(el); return out;
+    };
+    const lines = [];
+    const vmerge = new Map();
+    const walk = el => {
+      for (const c of el.childNodes) {
+        if (c.nodeType !== 1) continue;
+        if (c.localName === "p") { const t = txt(c).trim(); if (t) lines.push(t); }
+        else if (c.localName === "tbl") {
+          const prev = [];
+          kids(c, "tr").forEach(tr => {
+            const cells = [];
+            kids(tr, "tc").forEach(tc => {
+              const pr = kids(tc, "tcPr")[0];
+              const span = pr && kids(pr, "gridSpan")[0] ? parseInt(kids(pr, "gridSpan")[0].getAttributeNS(W, "val") || kids(pr, "gridSpan")[0].getAttribute("w:val") || "1", 10) : 1;
+              const vm = pr && kids(pr, "vMerge")[0];
+              let t = kids(tc, "p").map(txt).join(" ").replace(/\s+/g, " ").trim();
+              const col = cells.length;
+              /* celda combinada hacia abajo: repite el valor de arriba */
+              if (vm && !(vm.getAttributeNS(W, "val") || vm.getAttribute("w:val")) && !t) t = prev[col] || "";
+              cells.push(t);
+              for (let k = 1; k < span; k++) cells.push("");
+            });
+            cells.forEach((v, i) => { prev[i] = v; });
+            while (cells.length && !cells[cells.length - 1]) cells.pop();
+            if (cells.some(Boolean)) lines.push(cells.join("\t"));
+          });
+        } else if (c.localName === "body" || c.localName === "sdt" || c.localName === "sdtContent" || c.localName === "customXml" || c.localName === "smartTag") walk(c);
+      }
+    };
+    walk(doc.documentElement);
+    return lines.join("\n").trim();
+  }
+
+  /* Excel: celdas combinadas rellenas, fechas en AAAA-MM-DD y columnas separadas por tabulador */
+  function csvRows(text) {
+    const src = String(text || "").replace(/^\ufeff/, "");
+    const first = src.split(/\r?\n/)[0] || "";
+    const sep = (first.match(/;/g) || []).length > (first.match(/,/g) || []).length ? ";" : (first.includes("\t") ? "\t" : ",");
+    const rows = []; let row = [], cur = "", q = false;
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+      if (q) { if (ch === '"' && src[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; continue; }
+      if (ch === '"') q = true;
+      else if (ch === sep) { row.push(cur.trim()); cur = ""; }
+      else if (ch === "\n" || ch === "\r") { if (ch === "\r" && src[i + 1] === "\n") i++; row.push(cur.trim()); cur = ""; if (row.some(Boolean)) rows.push(row.map(c => c.replace(/\t/g, " ")).join("\t")); row = []; }
+      else cur += ch;
+    }
+    row.push(cur.trim()); if (row.some(Boolean)) rows.push(row.join("\t"));
+    return rows.join("\n");
+  }
+
+  async function xlsTextRows(f) {
+    /* CSV: se lee como texto (sin que la fecha cambie por zona horaria) */
+    if (/\.csv$/i.test(f.name || "")) return "## Hoja: " + f.name + "\n" + csvRows(await f.text());
+    const X = await loadXLSX();
+    /* sin cellDates: las fechas se leen del número de serie y no se recorren por la zona horaria */
+    const wb = X.read(await f.arrayBuffer(), { type: "array" });
+    if (global.ReplicaXlsTsv) return ReplicaXlsTsv.workbookText(X, wb);
+    return wb.SheetNames.map(n => "## Hoja: " + n + "\n" + X.utils.sheet_to_csv(wb.Sheets[n], { blankrows: false, FS: "\t" })).join("\n\n");
+  }
+
   async function pdfTextAndImages(f) {
     const L = await loadPDF();
     const data = new Uint8Array(await f.arrayBuffer());
@@ -56,11 +136,33 @@
     for (let i = 1; i <= pdf.numPages; i++) {
       const pg = await pdf.getPage(i);
       const tc = await pg.getTextContent();
-      const t = tc.items.map(it => it.str + (it.hasEOL ? "\n" : " ")).join("").trim();
+      const t = pdfLayout(tc.items);
       if (t.length > 40) txt += "--- Página " + i + " ---\n" + t + "\n";
       else weak.push(i);
     }
     return { txt, weak, pages: pdf.numPages, pdf };
+  }
+
+  /* PDF con texto: agrupa por renglón (posición vertical) y separa columnas con tabulador */
+  function pdfLayout(items) {
+    const rows = [];
+    (items || []).forEach(it => {
+      if (!it || !it.str || !it.str.trim() || !it.transform) return;
+      const x = it.transform[4], y = it.transform[5], h = Math.abs(it.transform[3]) || it.height || 10;
+      let r = rows.find(r => Math.abs(r.y - y) <= Math.max(2, h * 0.45));
+      if (!r) { r = { y, h, items: [] }; rows.push(r); }
+      r.items.push({ x, w: it.width || (it.str.length * h * 0.5), s: it.str, h });
+    });
+    rows.sort((a, b) => b.y - a.y);
+    return rows.map(r => {
+      r.items.sort((a, b) => a.x - b.x);
+      let out = "", end = null;
+      r.items.forEach(it => {
+        if (end != null) { const gap = it.x - end; out += gap > it.h * 1.6 ? "\t" : (gap > it.h * 0.15 || !/\s$/.test(out) ? " " : ""); }
+        out += it.s; end = it.x + it.w;
+      });
+      return out.replace(/ +/g, " ").replace(/ ?\t ?/g, "\t").trim();
+    }).filter(Boolean).join("\n");
   }
 
   async function renderPdfPage(pdf, i, maxSide) {
@@ -88,11 +190,11 @@
     const res = { kind: k, text: "", notes: [], ocr: false, audio: false };
     try {
       if (k === "xls") {
-        res.text = head + await xlsText(f);
+        res.text = head + await xlsTextRows(f);
       } else if (k === "doc") {
         if (/\.doc$/i.test(f.name) && !/\.docx$/i.test(f.name)) {
           res.notes.push("El formato .doc antiguo no se puede leer; guárdalo como .docx.");
-        } else res.text = head + await docText(f);
+        } else res.text = head + await docTextRows(f);
       } else if (k === "ppt") {
         if (/\.ppt$/i.test(f.name) && !/\.pptx$/i.test(f.name)) {
           res.notes.push("El formato .ppt antiguo no se puede leer; guárdalo como .pptx.");
@@ -117,6 +219,7 @@
             }
           }
           if (bits.length) body += (body ? "\n" : "") + bits.join("\n");
+          res.notes.push("«" + f.name + "» es un escaneo (" + r.weak.length + " página" + (r.weak.length === 1 ? "" : "s") + " sin texto). El reconocimiento óptico lee bien lo impreso, pero casi nada de la letra a mano: revisa cada renglón y agrega los que falten con «Agregar renglón».");
           if (!body) res.notes.push("El PDF no tiene texto seleccionable y el OCR no obtuvo texto útil.");
         } else if (!body) {
           res.notes.push("El PDF no tiene texto seleccionable. El reconocimiento óptico no estaba listo.");
@@ -166,5 +269,5 @@
     return { imgs, texto, omit, notes };
   }
 
-  global.ReplicaReaders = { kindOf, okFile, CHIP, extract, preparar, pptText };
+  global.ReplicaReaders = { kindOf, okFile, CHIP, extract, preparar, pptText, docTextRows, xlsTextRows, pdfLayout, csvRows };
 })(window);
